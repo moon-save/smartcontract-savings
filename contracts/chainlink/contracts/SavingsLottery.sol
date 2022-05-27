@@ -71,13 +71,18 @@ contract SavingsLottery is VRFConsumerBase {
             lottery.participants.push(msg.sender);
         }
 
-        lottery.prize += msg.value;
         uint256 uniqueP = ppplayer[_lotteryId][msg.sender];
 
         if (uniqueP == 0) {
             playersCount[_lotteryId]++;
         }
         ppplayer[_lotteryId][msg.sender] += numTickets;
+    }
+
+    function depositInterest() public payable {
+        Lottery storage lottery = lotteries[lotteryId.current()];
+
+        lottery.prize += msg.value;
         
         emit PrizeIncreased(lottery.lotteryId, lottery.prize);
     }
@@ -137,6 +142,15 @@ contract SavingsLottery is VRFConsumerBase {
         return lotteries[lotteryId.current()-1].winners;
     }
 
+    function getInterestPool() public view returns(uint256) {
+        return lotteries[lotteryId.current()].prize;
+    }
+
+    function getPlayerBalance() public view returns(uint256) {
+        Lottery storage lottery = lotteries[lotteryId.current()];
+        return ppplayer[lotteryId.current()][msg.sender] * lottery.ticketPrice;
+    }
+    
     function expandRandomNumbers(uint256 randomValue, uint256 n) public pure returns (uint256[] memory expandedValues) {
         expandedValues = new uint256[](n);
         for (uint256 i = 0; i < n; i++) {

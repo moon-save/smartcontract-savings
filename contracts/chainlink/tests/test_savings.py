@@ -33,7 +33,11 @@ def test_can_pick_winner():
     savings.depositSavings(0, {"from": get_account(index=1), "value": 3})
     savings.depositSavings(0, {"from": get_account(index=2), "value": 2})
 
-    savings_balance = savings.balance()
+    savings.depositInterest({"from": get_account(index=3), "value": 20})
+
+    assert savings.getInterestPool({"from": get_account()}) == 20
+
+    savings_balance = savings.getInterestPool()
     account_balance = get_account(index=0).balance()
 
     fund_with_link(savings)
