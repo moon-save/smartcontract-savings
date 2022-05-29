@@ -28,6 +28,7 @@ contract SavingsLottery is VRFConsumerBase {
     struct Lottery {
         uint256 lotteryId;
         address[] participants;
+        address[] uniqueParticipants;
         uint256 ticketPrice;
         uint256 prize;
         address[] winners;
@@ -48,6 +49,7 @@ contract SavingsLottery is VRFConsumerBase {
         Lottery memory lottery = Lottery({
             lotteryId: lotteryId.current(),
             participants: new address[](0),
+            uniqueParticipants: new address[](0),
             prize: 0,
             ticketPrice: _ticketPrice,
             winners: new address[](4),
@@ -59,7 +61,9 @@ contract SavingsLottery is VRFConsumerBase {
         emit LotteryCreated(lottery.lotteryId,lottery.ticketPrice,lottery.prize,lottery.endDate);
     }
 
-    function depositSavings(uint256 _lotteryId) public payable {
+    function depositSavings() public payable {
+        uint256 _lotteryId = lotteryId.current();
+
         Lottery storage lottery = lotteries[_lotteryId];
         require(block.timestamp < lottery.endDate, "Lottery participation is closed");
         require(msg.value >= lottery.ticketPrice, "Value must be at least ticket price");
@@ -75,6 +79,7 @@ contract SavingsLottery is VRFConsumerBase {
 
         if (uniqueP == 0) {
             playersCount[_lotteryId]++;
+            lottery.uniqueParticipants.push(msg.sender);
         }
         ppplayer[_lotteryId][msg.sender] += numTickets;
     }
@@ -87,20 +92,23 @@ contract SavingsLottery is VRFConsumerBase {
         emit PrizeIncreased(lottery.lotteryId, lottery.prize);
     }
 
-    function declareWinner(uint256 _lotteryId) public onlyAdmin {
+    function declareWinner() public onlyAdmin {
+        uint256 _lotteryId = lotteryId.current();
+
         Lottery storage lottery = lotteries[_lotteryId];
         require(block.timestamp > lottery.endDate,"Lottery is still active");
         require(!lottery.isFinished,"Lottery has already declared a winner");
 
         if (playersCount[_lotteryId] == 1) {
             require(lottery.participants[0] != address(0), "There has been no participation in this lottery");
-            // Ditribute funds to single winner
-        } else {
-            require(LINK.balanceOf(address(this)) >= fee, "Not enough LINK");
-            bytes32 requestId = requestRandomness(keyHash, fee);
-            lotteryRandomnessRequest[requestId] = _lotteryId;
-            emit RandomnessRequested(requestId, _lotteryId);
+            // Distribute funds to single winner
         }
+
+        require(LINK.balanceOf(address(this)) >= fee, "Not enough LINK");
+        bytes32 requestId = requestRandomness(keyHash, fee);
+        lotteryRandomnessRequest[requestId] = _lotteryId;
+        emit RandomnessRequested(requestId, _lotteryId);
+
         lotteryId.increment();
     }
 
@@ -109,7 +117,16 @@ contract SavingsLottery is VRFConsumerBase {
         Lottery storage lottery = lotteries[_lotteryId];
 
         uint8 numWinners = 4;
-        uint256 prizeMoney = lottery.prize / numWinners;
+        // Interest payout is half the pool
+        uint256 interestPool = lottery.prize / 2;
+        uint256 prizeMoney = (lottery.prize - interestPool) / numWinners;
+
+        // Payout dividend to all shareholders
+        uint256 interestPayoutPerPlayer = interestPool / playersCount[_lotteryId];
+        for (uint i = 0; i < playersCount[_lotteryId]; i++) {
+            lottery.uniqueParticipants[i].call{value: interestPayoutPerPlayer}("");
+        }
+
         uint256[] memory randomWinners = expandRandomNumbers(randomness, numWinners);
         
         for (uint i = 0; i < numWinners; i++) {
@@ -144,6 +161,10 @@ contract SavingsLottery is VRFConsumerBase {
 
     function getInterestPool() public view returns(uint256) {
         return lotteries[lotteryId.current()].prize;
+    }
+
+    function getWinAmount() public view returns(uint256) {
+        return lotteries[lotteryId.current()-1].prize / 2 / 4;
     }
 
     function getPlayerBalance() public view returns(uint256) {
